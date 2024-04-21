@@ -26,6 +26,7 @@ def translate_name(name):
     return name
 
 def main():
+    import os
     import time
     from safetensors.torch import load_file
 
@@ -37,11 +38,23 @@ def main():
         print(f"{key:30} {value.shape}")
     print()
 
-    for filename in [
-        "data/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        "data/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q8_0.gguf",
-    ]:
-        with open(filename, "r+b") as f:
+    gguf_dir = "data/TinyLlama-1.1B-Chat-v1.0-GGUF/"
+
+    max_mses = {
+        "tinyllama-1.1b-chat-v1.0.Q2_K.gguf": 0.0002846,
+        "tinyllama-1.1b-chat-v1.0.Q3_K_L.gguf": 7.652e-05,
+        "tinyllama-1.1b-chat-v1.0.Q3_K_M.gguf": 7.652e-05,
+        "tinyllama-1.1b-chat-v1.0.Q3_K_S.gguf": 7.652e-05,
+        "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf": 1.705e-05,
+        "tinyllama-1.1b-chat-v1.0.Q4_K_S.gguf": 1.705e-05,
+        "tinyllama-1.1b-chat-v1.0.Q5_K_M.gguf": 4.371e-06,
+        "tinyllama-1.1b-chat-v1.0.Q5_K_S.gguf": 4.371e-06,
+        "tinyllama-1.1b-chat-v1.0.Q6_K.gguf": 1.090e-06,
+        "tinyllama-1.1b-chat-v1.0.Q8_0.gguf": 1.034e-07,
+    }
+
+    for filename, max_mse in max_mses.items():
+        with open(os.path.join(gguf_dir, filename), "r+b") as f:
             # also works with mmap (at least on Linux)
             #import mmap
             #f =  mmap.mmap(f.fileno(), 0)
@@ -85,10 +98,7 @@ def main():
 
                 print(f"MSE {mse:.10f} {name:30} ggml_type {ggml_type:2} {str(shape):13} {ms:7.3f} ms")
 
-                if "Q8_0" in filename:
-                    assert mse < 2e-6
-                else:
-                    assert mse < 2e-5
+                assert mse < max_mse, f"Error too large, should be less than {max_mse}, but is {mse} for {filename}"
 
     print("Tests passed :)")
 
