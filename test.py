@@ -1,30 +1,6 @@
 import gguf
 import numpy as np
 
-def translate_name(name):
-    # Translate names from GGUF model to safetensors model.
-    if name == "output.weight":
-        return "lm_head.weight"
-
-    if name == "token_embd.weight":
-        return "model.embed_tokens.weight"
-
-    if name == "output_norm.weight":
-        return "model.norm.weight"
-
-    name = name.replace("blk.", "model.layers.")
-    name = name.replace(".attn_norm.weight", ".input_layernorm.weight")
-    name = name.replace(".ffn_down.weight", ".mlp.down_proj.weight")
-    name = name.replace(".ffn_gate.weight", ".mlp.gate_proj.weight")
-    name = name.replace(".ffn_up.weight", ".mlp.up_proj.weight")
-    name = name.replace(".ffn_norm.weight", ".post_attention_layernorm.weight")
-    name = name.replace(".attn_q.weight", ".self_attn.q_proj.weight")
-    name = name.replace(".attn_k.weight", ".self_attn.k_proj.weight")
-    name = name.replace(".attn_v.weight", ".self_attn.v_proj.weight")
-    name = name.replace(".attn_output.weight", ".self_attn.o_proj.weight")
-
-    return name
-
 def main():
     import os
     import time
@@ -86,7 +62,7 @@ def main():
                     weights = weights.transpose(0, 2, 1, 3)
                     weights = weights.reshape(shape[::-1])
 
-                other_name = translate_name(name)
+                other_name = gguf.translate_name(name)
 
                 expected = state_dict[other_name].float().numpy().astype(np.float32)
 
