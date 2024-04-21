@@ -1,13 +1,38 @@
-import gguf
+import os
+import tqdm
+import requests
 import numpy as np
+import gguf
+import time
+from safetensors.torch import load_file
+
+def download(url, directory, filename):
+    path = os.path.join(directory, filename)
+
+    if os.path.isfile(path):
+        print(f"{path} already downloaded")
+        return
+
+    os.makedirs(directory, exist_ok=True)
+
+    with requests.get(url, stream=True) as response:
+        size = int(response.headers["content-length"])
+        with open(path, "wb") as f:
+            with tqdm.tqdm(total=size, unit="B", unit_scale=True, desc=filename, ncols=80) as progress:
+                for chunk in response.iter_content(chunk_size=65536):
+                    f.write(chunk)
+                    progress.update(len(chunk))
 
 def main():
-    import os
-    import time
-    from safetensors.torch import load_file
-
     # Load safetensors model to compare against
-    state_dict = load_file("data/TinyLlama-1.1B-Chat-v1.0/model.safetensors")
+
+    safetensors_dir = "data/TinyLlama-1.1B-Chat-v1.0"
+    filename = "model.safetensors"
+
+    safetensors_url = f"https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0/resolve/main/{filename}?download=true"
+    download(safetensors_url, safetensors_dir, filename)
+
+    state_dict = load_file(os.path.join(safetensors_dir, filename))
 
     print("safetensors model for comparison")
     for key, value in state_dict.items():
@@ -30,6 +55,10 @@ def main():
     }
 
     for filename, max_mse in max_mses.items():
+        gguf_url = f"https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/{filename}?download=true"
+
+        download(gguf_url, gguf_dir, filename)
+
         with open(os.path.join(gguf_dir, filename), "r+b") as f:
             # also works with mmap (at least on Linux)
             #import mmap
