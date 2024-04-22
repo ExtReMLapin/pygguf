@@ -1,0 +1,21 @@
+[project]
+name = "gguf"
+version = "0.1.0"
+description = "GGUF parser in Python with NumPy-vectorized dequantization of GGML tensors"
+authors = [{name = "Thomas Germer"}]
+readme = "README.md"
+license = {file = "LICENSE"}
+dependencies = ["numpy"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+test = ["tqdm", "safetensors", "requests"]
+
+[project.urls]
+"Homepage" = "https://github.com/99991/pygguf"
+"Bug Reports" = "https://github.com/99991/pygguf/issues"
+"Source" = "https://github.com/99991/pygguf"

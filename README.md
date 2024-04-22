@@ -58,7 +58,7 @@ with open(filename, "rb") as f:
 For testing, follow these steps:
 
 1. Install required libraries (only required for testing)
-    * `pip install tqdm safetensors`
+    * `pip install tqdm requests safetensors`
 2. Run
     * `python test.py`
     * This will download the TinyLlama model (safentesors, GGUF) from
