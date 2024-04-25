@@ -95,7 +95,9 @@ def load_gguf(f):
     for t in tensorinfo.values():
         offset = start + t["bad_offset"]
 
-        alignment = 64
+        # Alignment is 32 by default.
+        # https://github.com/ggerganov/ggml/blob/e1daebbf9d38d510ba456c4d50b4500a73ac2b14/docs/gguf.md?plain=1#L253
+        alignment = info.get("general.alignment", 32)
         offset += (alignment - offset % alignment) % alignment
 
         t["offset"] = offset
