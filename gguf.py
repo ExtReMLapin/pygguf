@@ -14,24 +14,36 @@ GGML_TYPES = {
     "Q6_K": 14,
 }
 
-Q8_0_BLOCK_SIZE = 2 + 32
-Q2_K_BLOCK_SIZE = 256 // 16 + 256 // 4 + 2 + 2
-Q3_K_BLOCK_SIZE = 256 // 8 + 256 // 4 + 12 + 2
-Q4_K_BLOCK_SIZE = 2 + 2 + 12 + 256 // 2
-Q5_K_BLOCK_SIZE = 2 + 2 + 12 + 256 // 8 + 256 // 2
-Q6_K_BLOCK_SIZE = 256 // 2 + 256 // 4 + 256 // 16 + 2
+GGML_NAMES = {ggml_type: name for name, ggml_type in GGML_TYPES.items()}
 
-DATA_TYPES = {
-    4: "uint32",
-    5: "int32",
-    6: "float32",
-    8: "string",
-    9: "array",
-    10: "uint64",
+GGML_BLOCK_SIZES = {
+    "F32": 4,
+    "Q8_0": 2 + 32,
+    "Q2_K": 256 // 16 + 256 // 4 + 2 + 2,
+    "Q3_K": 256 // 8 + 256 // 4 + 12 + 2,
+    "Q4_K": 2 + 2 + 12 + 256 // 2,
+    "Q5_K": 2 + 2 + 12 + 256 // 8 + 256 // 2,
+    "Q6_K": 256 // 2 + 256 // 4 + 256 // 16 + 2,
 }
 
-for key, value in list(DATA_TYPES.items()):
-    DATA_TYPES[value] = key
+GGML_ELEMENTS_PER_BLOCK = {
+    "F32": 1,
+    "Q8_0": 32,
+    "Q2_K": 256,
+    "Q3_K": 256,
+    "Q4_K": 256,
+    "Q5_K": 256,
+    "Q6_K": 256,
+}
+
+DATA_TYPES = {
+    "uint32": 4,
+    "int32": 5,
+    "float32": 6,
+    "string": 8,
+    "array": 9,
+    "uint64": 10,
+}
 
 def read_value(f, data_type):
     if data_type == DATA_TYPES["string"]:
@@ -51,7 +63,7 @@ def read_value(f, data_type):
         return struct.unpack("<f", f.read(4))[0]
 
     elif data_type == DATA_TYPES["array"]:
-        data_type, count = struct.unpack("<IQ", f.read(4+8))
+        data_type, count = struct.unpack("<IQ", f.read(4 + 8))
         return [read_value(f, data_type) for _ in range(count)]
 
     else:
@@ -109,10 +121,11 @@ def dequantize_q2_k(data):
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.c#L1547
     # C struct definition
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.h#L74
-    num_blocks = len(data) // Q2_K_BLOCK_SIZE
+    block_size = GGML_BLOCK_SIZES["Q2_K"]
+    num_blocks = len(data) // block_size
 
-    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, Q2_K_BLOCK_SIZE // 2)
-    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, Q2_K_BLOCK_SIZE)
+    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, block_size // 2)
+    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, block_size)
 
     dmin = data_f16[:, -1].reshape(num_blocks, 1, 1).astype(np.float32)
     d = data_f16[:, -2].reshape(num_blocks, 1, 1).astype(np.float32)
@@ -145,10 +158,11 @@ def dequantize_q3_k(data):
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.c#L1723C32-L1723C42
     # C struct definition
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.h#L95
-    num_blocks = len(data) // Q3_K_BLOCK_SIZE
+    block_size = GGML_BLOCK_SIZES["Q3_K"]
+    num_blocks = len(data) // block_size
 
-    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, Q3_K_BLOCK_SIZE // 2)
-    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, Q3_K_BLOCK_SIZE)
+    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, block_size // 2)
+    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, block_size)
 
     d = data_f16[:, -1].reshape(num_blocks, 1, 1).astype(np.float32)
     bits = np.unpackbits(data_u8[:, :32].reshape(num_blocks, 32, 1), axis=-1, bitorder="little")
@@ -186,10 +200,11 @@ def dequantize_q4_k(data):
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.c#L1929
     # C struct definition
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.h#L116
-    num_blocks = len(data) // Q4_K_BLOCK_SIZE
+    block_size = GGML_BLOCK_SIZES["Q4_K"]
+    num_blocks = len(data) // block_size
 
-    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, Q4_K_BLOCK_SIZE // 2)
-    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, Q4_K_BLOCK_SIZE)
+    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, block_size // 2)
+    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, block_size)
 
     # Casting to float32 because float16 is very slow on CPU
     scale_factors = data_f16[:, 0].reshape(num_blocks, 1, 1).astype(np.float32)
@@ -211,10 +226,11 @@ def dequantize_q5_k(data):
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.c#L2129
     # C struct definition
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.h#L138
-    num_blocks = len(data) // Q5_K_BLOCK_SIZE
+    block_size = GGML_BLOCK_SIZES["Q5_K"]
+    num_blocks = len(data) // block_size
 
-    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, Q5_K_BLOCK_SIZE // 2)
-    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, Q5_K_BLOCK_SIZE)
+    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, block_size // 2)
+    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, block_size)
 
     d = data_f16[:, 0].reshape(num_blocks, 1).astype(np.float32)
     dmin = data_f16[:, 1].reshape(num_blocks, 1).astype(np.float32)
@@ -266,11 +282,12 @@ def dequantize_q6_k(data):
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.c#L2275
     # C struct definition
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.h#L152
-    num_blocks = len(data) // Q6_K_BLOCK_SIZE
+    block_size = GGML_BLOCK_SIZES["Q6_K"]
+    num_blocks = len(data) // block_size
 
-    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, Q6_K_BLOCK_SIZE // 2)
-    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, Q6_K_BLOCK_SIZE)
-    data_i8 = np.frombuffer(data, dtype=np.int8).reshape(num_blocks, Q6_K_BLOCK_SIZE)
+    data_f16 = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, block_size // 2)
+    data_u8 = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, block_size)
+    data_i8 = np.frombuffer(data, dtype=np.int8).reshape(num_blocks, block_size)
 
     scales = data_f16[:, -1].reshape(num_blocks, 1).astype(np.float32)
     # TODO use uint8 and cast later?
@@ -311,63 +328,48 @@ def dequantize_q6_k(data):
 def dequantize_q8_0(data):
     # C struct definition
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.h#L43
-    num_blocks = len(data) // Q8_0_BLOCK_SIZE
+    num_blocks = len(data) // GGML_BLOCK_SIZES["Q8_0"]
 
     scales = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, 1 + 16)[:, :1].astype(np.float32)
     qs = np.frombuffer(data, dtype=np.int8).reshape(num_blocks, 2 + 32)[:, 2:]
 
     return scales * qs
 
+def dequantize_f32(data):
+    return np.frombuffer(data, dtype=np.float32)
+
+GGML_DEQUANTIZE = {
+    "F32": dequantize_f32,
+    "Q8_0": dequantize_q8_0,
+    "Q2_K": dequantize_q2_k,
+    "Q3_K": dequantize_q3_k,
+    "Q4_K": dequantize_q4_k,
+    "Q5_K": dequantize_q5_k,
+    "Q6_K": dequantize_q6_k,
+}
+
 def load_gguf_tensor(f, tensorinfo, name):
     t = tensorinfo[name]
+
     offset = t["offset"]
     shape = t["shape"]
     ggml_type = t["ggml_type"]
+
+    if ggml_type not in GGML_NAMES:
+        raise NotImplementedError(f"ggml_type {ggml_type} not implemented")
+
+    ggml_name = GGML_NAMES[ggml_type]
+    block_size = GGML_BLOCK_SIZES[ggml_name]
+    elements_per_block = GGML_ELEMENTS_PER_BLOCK[ggml_name]
+    dequantize = GGML_DEQUANTIZE[ggml_name]
+
     num_elements = np.prod(shape)
+
     f.seek(offset)
 
-    if ggml_type == GGML_TYPES["F32"]:
-        size = num_elements * 4
-        values = np.frombuffer(f.read(size), dtype=np.float32)
-
-    elif ggml_type == GGML_TYPES["Q8_0"]:
-        size = num_elements * Q8_0_BLOCK_SIZE // 32
-        data = f.read(size)
-
-        values = dequantize_q8_0(data)
-
-    elif ggml_type == GGML_TYPES["Q2_K"]:
-        size = num_elements * Q2_K_BLOCK_SIZE // 256
-        data = f.read(size)
-
-        values = dequantize_q2_k(data)
-
-    elif ggml_type == GGML_TYPES["Q3_K"]:
-        size = num_elements * Q3_K_BLOCK_SIZE // 256
-        data = f.read(size)
-
-        values = dequantize_q3_k(data)
-
-    elif ggml_type == GGML_TYPES["Q4_K"]:
-        size = num_elements * Q4_K_BLOCK_SIZE // 256
-        data = f.read(size)
-
-        values = dequantize_q4_k(data)
-
-    elif ggml_type == GGML_TYPES["Q5_K"]:
-        size = num_elements * Q5_K_BLOCK_SIZE // 256
-        data = f.read(size)
-
-        values = dequantize_q5_k(data)
-
-    elif ggml_type == GGML_TYPES["Q6_K"]:
-        size = num_elements * Q6_K_BLOCK_SIZE // 256
-        data = f.read(size)
-
-        values = dequantize_q6_k(data)
-
-    else:
-        raise NotImplementedError(f"ggml_type {ggml_type} not implemented")
+    size = num_elements * block_size // elements_per_block
+    data = f.read(size)
+    values = dequantize(data)
 
     return values.reshape(shape[::-1])
 
