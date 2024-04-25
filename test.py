@@ -4,6 +4,7 @@ import requests
 import numpy as np
 import gguf
 import time
+import multiprocessing.pool
 from safetensors.torch import load_file
 
 def download(url, directory, filename):
@@ -22,6 +23,38 @@ def download(url, directory, filename):
                 for chunk in response.iter_content(chunk_size=65536):
                     f.write(chunk)
                     progress.update(len(chunk))
+
+def test_tensor(args):
+    filename, tensorinfo, name, info, state_dict = args
+    start_time = time.perf_counter()
+
+    # Note that the file has to be opened for every thread because f.seek and
+    # f.read on the same file from multiple threads would cause chaos.
+    with open(filename, "r+b") as f:
+        weights = gguf.load_gguf_tensor(f, tensorinfo, name)
+
+        shape = tensorinfo[name]["shape"]
+
+        # For some reason, the key and query weights are transposed
+        # in this weird way in the GGUF file. Not sure why.
+        if ".attn_k." in name or ".attn_q." in name:
+            num_heads = info["llama.attention.head_count"]
+            tmp_shape = (shape[-1] // num_heads // 2, num_heads, 2, shape[0])
+            weights = weights.reshape(tmp_shape)
+            weights = weights.transpose(0, 2, 1, 3)
+            weights = weights.reshape(shape[::-1])
+
+        other_name = gguf.translate_name(name)
+
+        expected = state_dict[other_name].float().numpy().astype(np.float32)
+
+        ms = (time.perf_counter() - start_time) * 1000
+
+        mse = np.mean(np.square(weights - expected))
+
+        ggml_type = tensorinfo[name]["ggml_type"]
+
+        return mse, ggml_type, name, shape, ms
 
 def main():
     # Load safetensors model to compare against
@@ -59,7 +92,9 @@ def main():
 
         download(gguf_url, gguf_dir, filename)
 
-        with open(os.path.join(gguf_dir, filename), "r+b") as f:
+        filename = os.path.join(gguf_dir, filename)
+
+        with open(filename, "r+b") as f:
             # also works with mmap (at least on Linux)
             #import mmap
             #f =  mmap.mmap(f.fileno(), 0)
@@ -75,35 +110,16 @@ def main():
                 print(f"{key:30} {str(value)[:70]}")
             print()
 
-            for name in tensorinfo:
-                start_time = time.perf_counter()
+        args = [(filename, tensorinfo, name, info, state_dict)
+            for name in tensorinfo]
 
-                weights = gguf.load_gguf_tensor(f, tensorinfo, name)
-
-                shape = tensorinfo[name]["shape"]
-
-                # For some reason, the key and query weights are transposed
-                # in this weird way in the GGUF file. Not sure why.
-                if ".attn_k." in name or ".attn_q." in name:
-                    num_heads = info["llama.attention.head_count"]
-                    tmp_shape = (shape[-1] // num_heads // 2, num_heads, 2, shape[0])
-                    weights = weights.reshape(tmp_shape)
-                    weights = weights.transpose(0, 2, 1, 3)
-                    weights = weights.reshape(shape[::-1])
-
-                other_name = gguf.translate_name(name)
-
-                expected = state_dict[other_name].float().numpy().astype(np.float32)
-
-                ms = (time.perf_counter() - start_time) * 1000
-
-                mse = np.mean(np.square(weights - expected))
-
-                ggml_type = tensorinfo[name]["ggml_type"]
-
-                print(f"MSE {mse:.10f} {name:30} ggml_type {ggml_type:2} {str(shape):13} {ms:7.3f} ms")
+        # Test parallel tensor loading
+        with multiprocessing.pool.ThreadPool() as pool:
+            for mse, ggml_type, name, shape, ms in pool.imap(test_tensor, args):
+                print(f"MSE {mse:.10f} {name:30} ggml_type {ggml_type:2} {str(shape):13} {ms:8.3f} ms")
 
                 assert mse < max_mse, f"Error too large, should be less than {max_mse}, but is {mse} for {filename}"
+
 
     print("Tests passed :)")
 
