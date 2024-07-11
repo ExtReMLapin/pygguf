@@ -6,6 +6,8 @@ import numpy as np
 
 GGML_TYPES = {
     "F32": 0,
+    "Q4_0": 2,
+    "Q5_0": 6,
     "Q8_0": 8,
     "Q2_K": 10,
     "Q3_K": 11,
@@ -18,6 +20,8 @@ GGML_NAMES = {ggml_type: name for name, ggml_type in GGML_TYPES.items()}
 
 GGML_BLOCK_SIZES = {
     "F32": 4,
+    "Q4_0": 2 + 16,
+    "Q5_0": 2 + 4 + 16,
     "Q8_0": 2 + 32,
     "Q2_K": 256 // 16 + 256 // 4 + 2 + 2,
     "Q3_K": 256 // 8 + 256 // 4 + 12 + 2,
@@ -28,6 +32,8 @@ GGML_BLOCK_SIZES = {
 
 GGML_ELEMENTS_PER_BLOCK = {
     "F32": 1,
+    "Q4_0": 32,
+    "Q5_0": 32,
     "Q8_0": 32,
     "Q2_K": 256,
     "Q3_K": 256,
@@ -353,6 +359,42 @@ def dequantize_q6_k(data):
         sc[:, 15] * q8[:, 16:],
     ], axis=1)
 
+def dequantize_q4_0(data):
+    # C implementation
+    # https://github.com/ggerganov/ggml/blob/a3c0188a4b5d3dec052ff87c9f773baa53631d70/src/ggml-quants.c#L1515
+    # C struct definition
+    # https://github.com/ggerganov/ggml/blob/a3c0188a4b5d3dec052ff87c9f773baa53631d70/src/ggml-common.h#L141
+    num_blocks = len(data) // GGML_BLOCK_SIZES["Q4_0"]
+
+    scales = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, 1 + 8)[:, :1].astype(np.float32)
+    qs = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, 2 + 16)[:, 2:]
+
+    return np.concatenate([
+        scales * ((qs & 0xf).astype(np.int8) - 8),
+        scales * ((qs >> 4).astype(np.int8) - 8),
+    ], axis=1)
+
+def dequantize_q5_0(data):
+    # C implementation
+    # https://github.com/ggerganov/ggml/blob/a3c0188a4b5d3dec052ff87c9f773baa53631d70/src/ggml-quants.c#L1556
+    # C struct definition
+    # https://github.com/ggerganov/ggml/blob/a3c0188a4b5d3dec052ff87c9f773baa53631d70/src/ggml-common.h#L161
+    num_blocks = len(data) // GGML_BLOCK_SIZES["Q5_0"]
+
+    scales = np.frombuffer(data, dtype=np.float16).reshape(num_blocks, 1 + 2 + 8)[:, :1].astype(np.float32)
+    qh = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, 2 + 4 + 16)[:, 2:2 + 4]
+    qs = np.frombuffer(data, dtype=np.uint8).reshape(num_blocks, 2 + 4 + 16)[:, 2 + 4:]
+
+    bits = np.unpackbits(qh, axis=-1, bitorder="little")
+
+    x0 = ((qs & 0xf).astype(np.int8) | (bits[:, :16] << 4)) - 16
+    x1 = ((qs >> 4).astype(np.int8) | (bits[:, 16:] << 4)) - 16
+
+    return np.concatenate([
+        scales * x0,
+        scales * x1,
+    ], axis=1)
+
 def dequantize_q8_0(data):
     # C struct definition
     # https://github.com/ggerganov/ggml/blob/fca1caafea7de9fbd7efc733b9818f9cf2da3050/src/ggml-quants.h#L43
@@ -368,6 +410,8 @@ def dequantize_f32(data):
 
 GGML_DEQUANTIZE = {
     "F32": dequantize_f32,
+    "Q4_0": dequantize_q4_0,
+    "Q5_0": dequantize_q5_0,
     "Q8_0": dequantize_q8_0,
     "Q2_K": dequantize_q2_k,
     "Q3_K": dequantize_q3_k,
