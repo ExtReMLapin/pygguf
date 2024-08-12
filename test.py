@@ -2,7 +2,7 @@ import os
 import tqdm
 import requests
 import numpy as np
-import gguf
+import gguf_parser
 import time
 import multiprocessing.pool
 from safetensors.torch import load_file
@@ -31,7 +31,7 @@ def test_tensor(args):
     # Note that the file has to be opened for every thread because f.seek and
     # f.read on the same file from multiple threads would cause chaos.
     with open(filename, "r+b") as f:
-        weights = gguf.load_gguf_tensor(f, tensorinfo, name)
+        weights = gguf_parser.load_gguf_tensor(f, tensorinfo, name)
 
         shape = tensorinfo[name]["shape"]
 
@@ -44,7 +44,7 @@ def test_tensor(args):
             weights = weights.transpose(0, 2, 1, 3)
             weights = weights.reshape(shape[::-1])
 
-        other_name = gguf.translate_name(name)
+        other_name = gguf_parser.translate_name(name)
 
         expected = state_dict[other_name].float().numpy().astype(np.float32)
 
@@ -101,7 +101,7 @@ def main():
             #import mmap
             #f =  mmap.mmap(f.fileno(), 0)
 
-            info, tensorinfo = gguf.load_gguf(f)
+            info, tensorinfo = gguf_parser.load_gguf(f)
 
             print("gguf metadata")
             for key, value in info.items():

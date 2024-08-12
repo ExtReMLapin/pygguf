@@ -3,8 +3,9 @@
 import struct
 import warnings
 import numpy as np
+from  gguf import GGMLQuantizationType, GGML_QUANT_SIZES
 
-GGML_TYPES = {
+"""GGML_TYPES = {
     "F32": 0,
     "Q4_0": 2,
     "Q5_0": 6,
@@ -14,11 +15,16 @@ GGML_TYPES = {
     "Q4_K": 12,
     "Q5_K": 13,
     "Q6_K": 14,
-}
+}"""
+
+
+
+GGML_TYPES = { enum_name : enum_value.value for enum_name, enum_value in GGMLQuantizationType.__members__.items() }
+
 
 GGML_NAMES = {ggml_type: name for name, ggml_type in GGML_TYPES.items()}
 
-GGML_BLOCK_SIZES = {
+"""GGML_BLOCK_SIZES = {
     "F32": 4,
     "Q4_0": 2 + 16,
     "Q5_0": 2 + 4 + 16,
@@ -28,19 +34,12 @@ GGML_BLOCK_SIZES = {
     "Q4_K": 2 + 2 + 12 + 256 // 2,
     "Q5_K": 2 + 2 + 12 + 256 // 8 + 256 // 2,
     "Q6_K": 256 // 2 + 256 // 4 + 256 // 16 + 2,
-}
+}"""
 
-GGML_ELEMENTS_PER_BLOCK = {
-    "F32": 1,
-    "Q4_0": 32,
-    "Q5_0": 32,
-    "Q8_0": 32,
-    "Q2_K": 256,
-    "Q3_K": 256,
-    "Q4_K": 256,
-    "Q5_K": 256,
-    "Q6_K": 256,
-}
+
+
+
+GGML_BLOCK_SIZES, GGML_ELEMENTS_PER_BLOCK = ({quant_name: GGML_QUANT_SIZES[GGMLQuantizationType[quant_name]][i] for quant_name in GGML_TYPES} for i in [1, 0])
 
 DATA_TYPES = {
     "uint8": 0,
