@@ -3,99 +3,56 @@
 import struct
 import warnings
 import numpy as np
-from  gguf import GGMLQuantizationType, GGML_QUANT_SIZES
-
-"""GGML_TYPES = {
-    "F32": 0,
-    "Q4_0": 2,
-    "Q5_0": 6,
-    "Q8_0": 8,
-    "Q2_K": 10,
-    "Q3_K": 11,
-    "Q4_K": 12,
-    "Q5_K": 13,
-    "Q6_K": 14,
-}"""
-
+from gguf import GGMLQuantizationType, GGML_QUANT_SIZES, GGUFValueType
+from gguf.quants import dequantize as gguf_dequantize
 
 
 GGML_TYPES = { enum_name : enum_value.value for enum_name, enum_value in GGMLQuantizationType.__members__.items() }
 
-
 GGML_NAMES = {ggml_type: name for name, ggml_type in GGML_TYPES.items()}
-
-"""GGML_BLOCK_SIZES = {
-    "F32": 4,
-    "Q4_0": 2 + 16,
-    "Q5_0": 2 + 4 + 16,
-    "Q8_0": 2 + 32,
-    "Q2_K": 256 // 16 + 256 // 4 + 2 + 2,
-    "Q3_K": 256 // 8 + 256 // 4 + 12 + 2,
-    "Q4_K": 2 + 2 + 12 + 256 // 2,
-    "Q5_K": 2 + 2 + 12 + 256 // 8 + 256 // 2,
-    "Q6_K": 256 // 2 + 256 // 4 + 256 // 16 + 2,
-}"""
-
-
-
 
 GGML_BLOCK_SIZES, GGML_ELEMENTS_PER_BLOCK = ({quant_name: GGML_QUANT_SIZES[GGMLQuantizationType[quant_name]][i] for quant_name in GGML_TYPES} for i in [1, 0])
 
-DATA_TYPES = {
-    "uint8": 0,
-    "int8": 1,
-    "uint16": 2,
-    "int16": 3,
-    "uint32": 4,
-    "int32": 5,
-    "float32": 6,
-    "bool": 7,
-    "string": 8,
-    "array": 9,
-    "uint64": 10,
-    "int64": 11,
-    "float64": 12,
-}
 
 def read_value(f, data_type):
-    if data_type == DATA_TYPES["string"]:
+    if data_type == GGUFValueType.STRING:
         length = struct.unpack("<Q", f.read(8))[0]
         return f.read(length).decode("utf-8")
 
-    elif data_type == DATA_TYPES["uint32"]:
+    elif data_type == GGUFValueType.UINT32:
         return struct.unpack("<I", f.read(4))[0]
 
-    elif data_type == DATA_TYPES["uint64"]:
+    elif data_type == GGUFValueType.UINT64:
         return struct.unpack("<Q", f.read(8))[0]
 
-    elif data_type == DATA_TYPES["int64"]:
+    elif data_type == GGUFValueType.INT64:
         return struct.unpack("<q", f.read(8))[0]
 
-    elif data_type == DATA_TYPES["int32"]:
+    elif data_type == GGUFValueType.INT32:
         return struct.unpack("<i", f.read(4))[0]
 
-    elif data_type == DATA_TYPES["float32"]:
+    elif data_type == GGUFValueType.FLOAT32:
         return struct.unpack("<f", f.read(4))[0]
 
-    elif data_type == DATA_TYPES["float64"]:
+    elif data_type == GGUFValueType.FLOAT64:
         return struct.unpack("<d", f.read(4))[0]
 
-    elif data_type == DATA_TYPES["bool"]:
+    elif data_type == GGUFValueType.BOOL:
         return struct.unpack("<?", f.read(1))[0]
 
-    elif data_type == DATA_TYPES["uint8"]:
+    elif data_type == GGUFValueType.UINT8:
         return struct.unpack("<B", f.read(1))[0]
 
-    elif data_type == DATA_TYPES["int8"]:
+    elif data_type == GGUFValueType.INT8:
         return struct.unpack("<b", f.read(1))[0]
 
-    elif data_type == DATA_TYPES["uint16"]:
+    elif data_type == GGUFValueType.UINT16:
         return struct.unpack("<H", f.read(2))[0]
 
-    elif data_type == DATA_TYPES["int16"]:
+    elif data_type == GGUFValueType.INT16:
         return struct.unpack("<h", f.read(2))[0]
 
-    elif data_type == DATA_TYPES["array"]:
+    elif data_type == GGUFValueType.ARRAY:
         data_type, count = struct.unpack("<IQ", f.read(4 + 8))
         return [read_value(f, data_type) for _ in range(count)]
 
@@ -112,7 +69,7 @@ def load_gguf(f):
 
     info = {}
     for _ in range(n_kv):
-        name = read_value(f, DATA_TYPES["string"])
+        name = read_value(f, GGUFValueType.STRING)
 
         data_type = struct.unpack("<I", f.read(4))[0]
 
@@ -120,11 +77,11 @@ def load_gguf(f):
 
     tensorinfo = {}
     for _ in range(n_tensors):
-        name = read_value(f, DATA_TYPES["string"])
-        shape_len = read_value(f, DATA_TYPES["uint32"])
-        shape = [read_value(f, DATA_TYPES["uint64"]) for _ in range(shape_len)]
-        ggml_type = read_value(f, DATA_TYPES["uint32"])
-        bad_offset = read_value(f, DATA_TYPES["uint64"])
+        name = read_value(f, GGUFValueType.STRING)
+        shape_len = read_value(f, GGUFValueType.UINT32)
+        shape = [read_value(f, GGUFValueType.UINT64) for _ in range(shape_len)]
+        ggml_type = read_value(f, GGUFValueType.UINT32)
+        bad_offset = read_value(f, GGUFValueType.UINT64)
 
         tensorinfo[name] = {
             "ggml_type": ggml_type,
@@ -433,14 +390,18 @@ def load_gguf_tensor(f, tensorinfo, name):
     block_size = GGML_BLOCK_SIZES[ggml_name]
     elements_per_block = GGML_ELEMENTS_PER_BLOCK[ggml_name]
     dequantize = GGML_DEQUANTIZE[ggml_name]
-
+    
     num_elements = np.prod(shape)
 
     f.seek(offset)
 
     size = num_elements * block_size // elements_per_block
     data = f.read(size)
+    
+
     values = dequantize(data)
+    values_b = gguf_dequantize(data, GGMLQuantizationType(ggml_type))
+    print(data)
 
     return values.reshape(shape[::-1])
 
